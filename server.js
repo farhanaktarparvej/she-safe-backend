@@ -3,6 +3,7 @@ const cookieParser = require('cookie-parser');
 const cors = require('cors');
 require('dotenv').config();
 
+const { connectDB } = require('./config/db');
 const { requireAdminAuth } = require('./middleware/auth');
 const adminRoutes = require('./routes/admin');
 const alertsRoutes = require('./routes/alerts'); // admin dashboard: read/manage SOS alerts
@@ -77,13 +78,23 @@ app.get('/', (req, res) => {
   res.json({ status: 'SHE SAFE backend is running', api: '/api/*' });
 });
 
-app.listen(PORT, () => {
-  console.log('========================================');
-  console.log('  SHE SAFE backend');
-  console.log('========================================');
-  console.log(`  Listening on http://localhost:${PORT}`);
-  console.log(`  Device SOS endpoint: http://localhost:${PORT}/api/v1/sos`);
-  console.log('  Alerts are logged to console + backend/logs/sos.log');
-  console.log('  and persisted in backend/data/alerts.json');
-  console.log('========================================');
-});
+// Connect to MongoDB first — if it fails, the server never comes up
+// (better to fail loudly at boot than serve requests with no working store).
+connectDB()
+  .then(() => {
+    app.listen(PORT, () => {
+      console.log('========================================');
+      console.log('  SHE SAFE backend');
+      console.log('========================================');
+      console.log(`  Listening on http://localhost:${PORT}`);
+      console.log(`  Device SOS endpoint: http://localhost:${PORT}/api/v1/sos`);
+      console.log('  Alerts are logged to console + backend/logs/sos.log');
+      console.log('  and persisted in MongoDB (see MONGODB_URI in .env)');
+      console.log('========================================');
+    });
+  })
+  .catch((err) => {
+    console.error('Failed to connect to MongoDB:', err.message);
+    console.error('Check MONGODB_URI in backend/.env — see README.md for setup.');
+    process.exit(1);
+  });

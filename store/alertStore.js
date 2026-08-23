@@ -1,46 +1,15 @@
-// Lightweight JSON-file "database" for SOS alerts.
+// SOS alert storage — backed by MongoDB (Mongoose).
 //
-// No MongoDB / external DB needed to run this backend locally — every
-// alert (from the ESP32 device or the dashboard's "Simulate SOS") is
-// appended to data/alerts.json, so data survives restarts.
-//
-// This keeps a full in-memory copy and rewrites the file on every change,
-// which is more than fine for a hackathon-scale SOS device / small
-// dashboard (dozens–thousands of alerts), not built for high write volume.
+// Same function names/shapes as the old JSON-file store, so routes/*.js
+// didn't need to change: create/findAll/findById/updateById/deleteById/
+// countByStatus. Every function is now async (Mongo I/O), which routes
+// already `await` since they're inside async handlers.
 
-const fs = require('fs');
-const path = require('path');
-const crypto = require('crypto');
-
-const DATA_DIR = path.join(__dirname, '..', 'data');
-const DATA_FILE = path.join(DATA_DIR, 'alerts.json');
-
-function ensureStore() {
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-  if (!fs.existsSync(DATA_FILE)) fs.writeFileSync(DATA_FILE, '[]', 'utf8');
-}
-
-function readAll() {
-  ensureStore();
-  try {
-    const raw = fs.readFileSync(DATA_FILE, 'utf8');
-    return JSON.parse(raw || '[]');
-  } catch (err) {
-    console.error('[store] Failed to read/parse alerts.json, starting fresh:', err.message);
-    return [];
-  }
-}
-
-function writeAll(alerts) {
-  ensureStore();
-  fs.writeFileSync(DATA_FILE, JSON.stringify(alerts, null, 2), 'utf8');
-}
+const mongoose = require('mongoose');
+const Alert = require('../models/Alert');
 
 function create(fields) {
-  const alerts = readAll();
-  const now = new Date().toISOString();
-  const alert = {
-    _id: crypto.randomUUID(),
+  return Alert.create({
     name: fields.name || 'Unknown User',
     location: fields.location || '',
     deviceId: fields.deviceId || '',
@@ -49,49 +18,35 @@ function create(fields) {
     lat: fields.lat,
     long: fields.long,
     status: fields.status || 'Active',
-    createdAt: now,
-    updatedAt: now,
-  };
-  alerts.push(alert);
-  writeAll(alerts);
-  return alert;
+  }).then((doc) => doc.toJSON());
 }
 
-function findAll(filter = {}) {
-  const alerts = readAll();
-  const filtered = alerts.filter((a) =>
-    Object.entries(filter).every(([k, v]) => a[k] === v)
-  );
-  // most recent first
-  return filtered.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+async function findAll(filter = {}) {
+  const docs = await Alert.find(filter).sort({ createdAt: -1 });
+  return docs.map((doc) => doc.toJSON());
 }
 
-function findById(id) {
-  return readAll().find((a) => a._id === id) || null;
+async function findById(id) {
+  if (!mongoose.isValidObjectId(id)) return null;
+  const doc = await Alert.findById(id);
+  return doc ? doc.toJSON() : null;
 }
 
-function updateById(id, updates) {
-  const alerts = readAll();
-  const idx = alerts.findIndex((a) => a._id === id);
-  if (idx === -1) return null;
-  alerts[idx] = { ...alerts[idx], ...updates, updatedAt: new Date().toISOString() };
-  writeAll(alerts);
-  return alerts[idx];
+async function updateById(id, updates) {
+  if (!mongoose.isValidObjectId(id)) return null;
+  const doc = await Alert.findByIdAndUpdate(id, updates, { new: true, runValidators: true });
+  return doc ? doc.toJSON() : null;
 }
 
-function deleteById(id) {
-  const alerts = readAll();
-  const idx = alerts.findIndex((a) => a._id === id);
-  if (idx === -1) return false;
-  alerts.splice(idx, 1);
-  writeAll(alerts);
-  return true;
+async function deleteById(id) {
+  if (!mongoose.isValidObjectId(id)) return false;
+  const doc = await Alert.findByIdAndDelete(id);
+  return !!doc;
 }
 
-function countByStatus(status) {
-  const alerts = readAll();
-  if (!status) return alerts.length;
-  return alerts.filter((a) => a.status === status).length;
+async function countByStatus(status) {
+  if (!status) return Alert.countDocuments();
+  return Alert.countDocuments({ status });
 }
 
 module.exports = { create, findAll, findById, updateById, deleteById, countByStatus };

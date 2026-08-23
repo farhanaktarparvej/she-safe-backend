@@ -63,7 +63,7 @@ router.put('/', verifyApiKey, async (req, res) => {
       return res.status(400).json({ error: 'latitude/longitude values are out of range.' });
     }
 
-    const alert = store.create({
+    const alert = await store.create({
       name: device_id,      // shows the device id in the "Name" column on the dashboard
       deviceId: device_id,
       date,

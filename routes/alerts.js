@@ -29,7 +29,7 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: 'lat/long values are out of range.' });
     }
 
-    const alert = store.create({
+    const alert = await store.create({
       name,
       location,
       date,
@@ -57,7 +57,7 @@ router.get('/', async (req, res) => {
   try {
     const filter = {};
     if (req.query.status) filter.status = req.query.status;
-    return res.json(store.findAll(filter));
+    return res.json(await store.findAll(filter));
   } catch (err) {
     console.error('Error fetching alerts:', err);
     return res.status(500).json({ error: 'Server error while fetching alerts.' });
@@ -70,11 +70,12 @@ router.get('/', async (req, res) => {
  */
 router.get('/stats/summary', async (req, res) => {
   try {
-    return res.json({
-      total: store.countByStatus(),
-      active: store.countByStatus('Active'),
-      resolved: store.countByStatus('Resolved'),
-    });
+    const [total, active, resolved] = await Promise.all([
+      store.countByStatus(),
+      store.countByStatus('Active'),
+      store.countByStatus('Resolved'),
+    ]);
+    return res.json({ total, active, resolved });
   } catch (err) {
     console.error('Error fetching stats:', err);
     return res.status(500).json({ error: 'Server error while fetching stats.' });
@@ -85,9 +86,14 @@ router.get('/stats/summary', async (req, res) => {
  * GET /api/alerts/:id
  */
 router.get('/:id', async (req, res) => {
-  const alert = store.findById(req.params.id);
-  if (!alert) return res.status(404).json({ error: 'Alert not found.' });
-  return res.json(alert);
+  try {
+    const alert = await store.findById(req.params.id);
+    if (!alert) return res.status(404).json({ error: 'Alert not found.' });
+    return res.json(alert);
+  } catch (err) {
+    console.error('Error fetching alert:', err);
+    return res.status(500).json({ error: 'Server error while fetching alert.' });
+  }
 });
 
 /**
@@ -95,18 +101,28 @@ router.get('/:id', async (req, res) => {
  * Mark an alert as Resolved.
  */
 router.patch('/:id/resolve', async (req, res) => {
-  const alert = store.updateById(req.params.id, { status: 'Resolved' });
-  if (!alert) return res.status(404).json({ error: 'Alert not found.' });
-  return res.json(alert);
+  try {
+    const alert = await store.updateById(req.params.id, { status: 'Resolved' });
+    if (!alert) return res.status(404).json({ error: 'Alert not found.' });
+    return res.json(alert);
+  } catch (err) {
+    console.error('Error resolving alert:', err);
+    return res.status(500).json({ error: 'Server error while updating alert.' });
+  }
 });
 
 /**
  * DELETE /api/alerts/:id
  */
 router.delete('/:id', async (req, res) => {
-  const ok = store.deleteById(req.params.id);
-  if (!ok) return res.status(404).json({ error: 'Alert not found.' });
-  return res.json({ message: 'Alert deleted.' });
+  try {
+    const ok = await store.deleteById(req.params.id);
+    if (!ok) return res.status(404).json({ error: 'Alert not found.' });
+    return res.json({ message: 'Alert deleted.' });
+  } catch (err) {
+    console.error('Error deleting alert:', err);
+    return res.status(500).json({ error: 'Server error while deleting alert.' });
+  }
 });
 
 module.exports = router;
